@@ -68,7 +68,6 @@ class SDTs(nn.Module):
         self.backend = 'ce'  # TODO:
 
         self.V_next_value = torch.zeros([self.inner_numb, self.T])
-        #         self.parameters = self.__dict__
 
         self.param_dict = {}
         for i in range(T):
@@ -79,21 +78,9 @@ class SDTs(nn.Module):
             self.param_dict['phi' + str(i)] = nn.Parameter(
                 torch.nn.init.xavier_uniform_(Variable(torch.randn(self.leafs_numb, 1), ).cuda(), gain=1))
 
-        #         import pdb; pdb.set_trace()
         self.params = nn.ParameterDict(
             self.param_dict
         )
-
-    #         for i in range(T):
-    #             self.parameters['W' + str(i)] = nn.Parameter(
-    #                 torch.nn.init.xavier_uniform_(Variable(torch.randn(n_x, self.inner_numb)).cuda(), gain=1))
-    #             self.parameters['b' + str(i)] = nn.Parameter(
-    #                 torch.nn.init.constant_(Variable(torch.randn(1, self.inner_numb)).cuda(), 0))
-    #             self.parameters['phi' + str(i)] = nn.Parameter(
-    #                 torch.nn.init.xavier_uniform_(Variable(torch.randn(self.leafs_numb, 1), ).cuda(), gain=1))
-    #             self.parameters['W' + str(i)].requires_grad = True
-    #             self.parameters['b' + str(i)].requires_grad = True
-    #             self.parameters['phi' + str(i)].requires_grad = True
 
     def node_probability(self, index_node, A):
         p = torch.ones(A.shape[0]).cuda()
@@ -148,12 +135,9 @@ class SDTs(nn.Module):
         return regularization, V_next
 
     def compute_Boosting_output(self, X, Y):
-        #         weight = torch.ones_like(Y)
-        #         weight [Y > 0] = 1
-        #         weight.view(-1)
         output_sum = torch.full_like(Y, Y.mean())
         output = []
-        #         print('training phi', self.param_dict['phi' + str(0)])
+
         for t in range(self.T):
             A = self.forward_propagation_Boosting(X, self.param_dict['W' + str(t)], self.param_dict['b' + str(t)])
             leafs_prob_matrix = self.compute_leafs_prob_matrix(A)
@@ -163,9 +147,6 @@ class SDTs(nn.Module):
         return output_sum
 
     def compute_cost_Boosting_wr(self, X, Y):
-        #         weight = torch.ones_like(Y)
-        #         weight [Y > 0] = 1
-        #         weight.view(-1)
         output_sum = torch.full_like(Y, Y.mean())
         output = []
         V_next = []
@@ -180,18 +161,12 @@ class SDTs(nn.Module):
             loss_Boosting = torch.exp(-torch.mul(output_sum, Y))
             residual = torch.mul(loss_Boosting, Y)
             cost_wr = torch.sum(torch.pow((residual - torch.squeeze(output[t])), 2))
-            # import pdb; pdb.set_trace()
             reg, V_now = self.compute_regularization(A, inner_prob_matrix, self.V_next_value[:, t])
             V_next.append(V_now)
             cost_sum = cost_sum + cost_wr + 1. * reg + 0.005 * torch.sum(torch.pow(self.param_dict['W' + str(t)], 2))
         V_next = torch.stack(V_next, 1)
         self.V_next_value = V_next.detach()
-        #         predictions = (torch.tanh(output_sum) > 0).type(torch.FloatTensor) - (torch.tanh(output_sum) < 0).type(
-        #             torch.FloatTensor)
-        #         predictions = predictions.type(torch.DoubleTensor).cuda()
-        #         correct_predictions = torch.eq(predictions, Y)
-        #         accuracy = torch.mean(correct_predictions.type(torch.FloatTensor))
-        #         print('accuracy = ', accuracy)
+
         return cost_sum
 
     def forward(self, X, Y):
@@ -203,7 +178,6 @@ class SDTs(nn.Module):
             y_true = y_true.reshape(-1, 1)
         if self.backend == 'ce':
             self.backend = 'auc'
-            #             import pdb; pdb.set_trace()
             return self.compute_cost_Boosting_wr(X, Y)
         else:
             self.backend = 'ce'
@@ -216,11 +190,9 @@ class SDTs(nn.Module):
                                                torch.mean((self.p * y_pred * (0 == y_true).float() - (
                                                        1 - self.p) * y_pred * (1 == y_true).float()))) - \
                              self.p * (1 - self.p) * self.alpha ** 2
-            #                 import pdb; pdb.set_trace()
             return self.L_AUC
 
     def compute_accuracy_Boosting(self, X, Y):
-        #         print('testing phi', self.param_dict['phi' + str(0)])
         output_sum = torch.full_like(Y, Y.mean())
         Y = Y.cuda()
         output = []
@@ -232,8 +204,7 @@ class SDTs(nn.Module):
         predictions = (torch.tanh(output_sum) > 0).type(torch.FloatTensor) - (torch.tanh(output_sum) < 0).type(
             torch.FloatTensor)
         predictions = predictions.type(torch.DoubleTensor).cuda()
-        #         correct_predictions = torch.eq(predictions, Y)
-        #         accuracy = torch.mean(correct_predictions.type(torch.FloatTensor))
+
         return predictions
 
 
@@ -241,7 +212,7 @@ if __name__ == "__main__":
     batch_size = 512
     epochs = 200
     t = 40
-    #     imratio = 0.95
+    # imratio = 0.95
     margin = 1.0
     lr = 0.1
     gamma = 500
@@ -270,13 +241,7 @@ if __name__ == "__main__":
     sdts = SDTs(n_x)
     sdts = sdts.cuda()
     alpha = 0.05
-    #     paramlist = []
-    #     for i in range(sdts.T):
-    #         paramlist.append(sdts.parameters['W' + str(i)])
-    #         paramlist.append(sdts.parameters['b' + str(i)])
-    #         paramlist.append(sdts.parameters['phi' + str(i)])
-
-    #     Loss = CompositionalLoss(imratio=imratio)
+    
     optimizer = PDSCA(sdts,
                       a=sdts.a,
                       b=sdts.b,
@@ -287,10 +252,7 @@ if __name__ == "__main__":
                       gamma=gamma,
                       margin=margin,
                       weight_decay=weight_decay)
-    #     optimizer = torch.optim.Adam(paramlist, lr=alpha)
-    #     result = pd.DataFrame(columns=['epoch', 'loss', 'ac_test', 'auc_test'])
-    #     best_testing_acc = 0.0
-    #     best_testing_auc = 0.0
+    
     test_auc_max = 0
     print('-' * 30)
     best_testing_auc = 0.0
@@ -318,7 +280,8 @@ if __name__ == "__main__":
         train_true = np.concatenate(train_true)
         train_pred = np.concatenate(train_pred)
         train_auc = roc_auc_score(train_true, train_pred)
-        # Evaluating
+
+        # Evaluating        
         sdts.eval()
         torch.set_grad_enabled(False)
         torch.cuda.empty_cache()
@@ -339,24 +302,3 @@ if __name__ == "__main__":
         sdts.train()
         torch.set_grad_enabled(True)
 
-        #         # training_accuracy, training_output, _ = sdts.compute_accuracy_Boosting(train_data, train_labels)
-        #         test_accuracy, test_output, pre = sdts.compute_accuracy_Boosting(eval_data, eval_labels)
-        #         # training_fpr, training_tpr, training_thresholds = roc_curve(train_labels.cpu().detach().numpy(),
-        #         #                                                            training_output.cpu().detach().numpy())
-        #         #         training_auc = auc(training_fpr, training_tpr)
-        #         test_fpr, test_tpr, test_thresholds = roc_curve(eval_labels.cpu().detach().numpy(), pre.cpu().detach().numpy())
-        #         test_auc = auc(test_fpr, test_tpr)
-        #         #         ac_train = training_accuracy.detach().numpy()
-        #         ac_test = test_accuracy.detach().numpy()
-        #         #         auc_train = training_auc
-        #         auc_test = test_auc
-        #         if auc_test > best_testing_auc:
-        #             best_testing_auc = auc_test
-        #             best_testing_acc = ac_test
-        #             a = classification_report(pre.cpu().detach().numpy(), eval_labels.cpu().detach().numpy(), digits=8)
-        #         loss = epoch_cost.cpu().detach().numpy()
-        #         result = result.append(
-        #             pd.DataFrame({'epoch': [epoch], 'loss': [loss / t], 'ac_test': [ac_test], 'auc_test': [auc_test]}),
-        #             ignore_index=True)
-        #         print(result)
-        torch.set_grad_enabled(True)
