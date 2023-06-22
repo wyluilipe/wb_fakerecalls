@@ -1,43 +1,45 @@
-#  -*-  coding: UTF-8  -*-
-# This is a Python script for DBDT-Composition package. Training a deep neural network by
-# maximizing the AUC leads to the degradation of the feature representation, so training
-# a DBDT by optimizing the AUC surrogated loss usually does not yield satisfactory performance.
-# To avoid feature representation degradation, we optimize the DBDT through a compositional training
-# approach for end-to-end deep AUC maximization.
-
 from libauc.optimizers import PDSCA
 from libauc.losses import CompositionalAUCLoss
 import math
 import pandas as pd
 import numpy as np
 import torch
-import tensorflow as tf
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.utils.data as Data
-from sklearn.metrics import roc_curve, auc, roc_auc_score, f1_score
+from sklearn.metrics import roc_curve, auc, roc_auc_score
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split, StratifiedKFold, StratifiedShuffleSplit
 
+# Data Preprocessing
 torch.set_default_tensor_type(torch.DoubleTensor)
 
-data = pd.read_csv('/content/drive/My Drive/Colab Notebooks/wb/wb_school_task_2.csv.gzip', compression='gzip')
-X, y = data[[f'f{i}' for i in range(1, 9)]], data['label']
-x_train, x_test, y_train, y_test = train_test_split(X, y, train_size=0.7, random_state=42)
+features = [f'f{i}' for i in range(1, 9)]
+X, y = data[features], data['label']
+x_train, x_valid, y_train, y_valid = train_test_split(X, y, train_size=0.8, stratify=y)
+x_valid, x_test, y_valid, y_test = train_test_split(x_valid, y_valid, train_size=0.5, stratify=y_valid)
 
 x_train = (x_train - x_train.min()) / (x_train.max() - x_train.min())
+x_valid = (x_valid - x_valid.min()) / (x_valid.max() - x_valid.min())
 x_test = (x_test - x_test.min()) / (x_test.max() - x_test.min())
+
 x_train = np.array(x_train)
+x_valid = np.array(x_valid)
 x_test = np.array(x_test)
+
 y_train = np.array(y_train).astype(np.float32)
+y_valid = np.array(y_valid).astype(np.float32)
 y_test = np.array(y_test).astype(np.float32)
+
 y_train = y_train.reshape(-1)
+y_valid = y_valid.reshape(-1)
 y_test = y_test.reshape(-1)
+
 y_train = y_train * 2 - 1
+y_valid = y_valid * 2 - 1
 y_test = y_test * 2 - 1
 
-
-# 定义SDT+boost
+#SDTs class
 class SDTs(nn.Module):
     def __init__(
             self,
@@ -73,8 +75,17 @@ class SDTs(nn.Module):
                 torch.nn.init.constant_(Variable(torch.randn(1, self.inner_numb)).cuda(), 0))
             self.param_dict['phi' + str(i)] = nn.Parameter(
                 torch.nn.init.xavier_uniform_(Variable(torch.randn(self.leafs_numb, 1), ).cuda(), gain=1))
+
         self.params = self.param_dict.values()
-      
+
+    def __iter__(self):
+        return iter(self.params)
+
+    def __len__(self):
+        return len(self.params)
+
+    def __getitem__(self, idx):
+        return self.params[idx]
 
     def node_probability(self, index_node, A):
         p = torch.ones(A.shape[0]).cuda()
@@ -179,19 +190,13 @@ class SDTs(nn.Module):
             if self.p is None:
                 self.p = (y_true == 1).float().sum() / y_true.shape[0]
                 y_pred = torch.sigmoid(y_pred)
-                #self.L_AUC = (1 - self.p) * torch.mean((y_pred - self.a) ** 2 * (1 == y_true).float()) + \
-                #             self.p * torch.mean((y_pred - self.b) ** 2 * (0 == y_true).float()) + \
-                #             2 * self.alpha * (self.p * (1 - self.p) * self.margin + \
-                #                               torch.mean((self.p * y_pred * (0 == y_true).float() - (
-                #                                       1 - self.p) * y_pred * (1 == y_true).float()))) - \
-                #             self.p * (1 - self.p) * self.alpha ** 2
-                epsilon = 1e-7
-                tp = torch.sum(y_pred * y_true)
-                fp = torch.sum(y_pred * (1 - y_true))
-                fn = torch.sum((1 - y_pred) * y_true)
-                precision = tp / (tp + fp + epsilon)
-                recall = tp / (tp + fn + epsilon)
-                self.L_AUC = 2 * precision * recall / (precision + recall + epsilon)
+                print(self.p, self.alpha, self.margin)
+                self.L_AUC = (1 - self.p) * torch.mean((y_pred - self.a) ** 2 * (1 == y_true).float()) + \
+                             self.p * torch.mean((y_pred - self.b) ** 2 * (0 == y_true).float()) + \
+                             2 * self.alpha * (self.p * (1 - self.p) * self.margin + \
+                                               torch.mean((self.p * y_pred * (0 == y_true).float() - (
+                                                       1 - self.p) * y_pred * (1 == y_true).float()))) - \
+                             self.p * (1 - self.p) * self.alpha ** 2
 
             return self.L_AUC
 
@@ -211,8 +216,7 @@ class SDTs(nn.Module):
 
         return predictions
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     batch_size = 512
     epochs = 200
     t = 40
@@ -225,8 +229,8 @@ if __name__ == "__main__":
     beta2 = 0.999  # try different values: e.g., [0.999, 0.99, 0.9]
     train_data = torch.tensor(x_train).cuda()
     train_labels = torch.tensor(y_train).cuda()
-    eval_data = torch.tensor(x_test).cuda()
-    eval_labels = torch.tensor(y_test).cuda()
+    eval_data = torch.tensor(x_valid).cuda()
+    eval_labels = torch.tensor(y_valid).cuda()
 
     train_dataset = Data.TensorDataset(train_data, train_labels)
     eval_dataset = Data.TensorDataset(eval_data, eval_labels)
@@ -245,22 +249,22 @@ if __name__ == "__main__":
     sdts = SDTs(n_x)
     sdts = sdts.cuda()
     alpha = 0.05
-    loss_fn = CompositionalAUCLoss()
-    #optimizer = PDSCA(sdts,
-    #                  a=sdts.a,
-    #                  b=sdts.b,
-    #                  loss_fn = loss_fn,
-    #                  alpha=sdts.alpha,
-    #                  lr=lr,
-    #                  beta1=beta1,
-    #                  beta2=beta2,
-    #                  gamma=gamma,
-    #                  margin=margin,
-    #                  weight_decay=weight_decay)
 
-    optimizer = torch.optim.Adam(sdts.params, lr=0.0001, maximize=True)
-    torch.set_grad_enabled(True)
-    # torch.set_grad_enabled(True)
+    def custom_loss_fn(y_true, y_pred):
+        return K.mean(K.square(y_pred - y_true))
+
+    optimizer = PDSCA(sdts,
+                      a=sdts.a,
+                      b=sdts.b,
+                      alpha=None,
+                      lr=lr,
+                      loss_fn=CompositionalAUCLoss(),
+                      beta1=beta1,
+                      beta2=beta2,
+                      gamma=gamma,
+                      margin=margin,
+                      weight_decay=weight_decay)
+
     test_auc_max = 0
     print('-' * 30)
     best_testing_auc = 0.0
@@ -276,24 +280,27 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
             data = data
             target = target.view(-1)
+
             optimizer.zero_grad()
+
             y_pred = sdts.compute_Boosting_output(data, target)
             loss = sdts.forward(data, target)
 
             loss.backward(retain_graph=True)
             optimizer.step()
+
             train_pred.append(y_pred.cpu().detach().numpy())
             train_true.append(target.cpu().detach().numpy())
 
         train_true = np.concatenate(train_true)
         train_pred = np.concatenate(train_pred)
-        train_auc = f1_score(train_true, train_pred.round().astype(int), average='micro')
+        train_auc = roc_auc_score(train_true, train_pred)
         # Evaluating
         sdts.eval()
         torch.set_grad_enabled(False)
         torch.cuda.empty_cache()
         test_pred = sdts.compute_Boosting_output(eval_data, eval_labels)
-        val_auc = f1_score(np.array(eval_labels.cpu().detach().numpy() > 0).astype(int), test_pred.cpu().detach().numpy().round(), average='micro')
+        val_auc = roc_auc_score(eval_labels.cpu().detach().numpy(), test_pred.cpu().detach().numpy())
         predictions = (torch.tanh(test_pred) > 0).type(torch.FloatTensor) - (torch.tanh(test_pred) < 0).type(
             torch.FloatTensor)
         predictions = predictions.type(torch.DoubleTensor).cuda()
@@ -304,7 +311,7 @@ if __name__ == "__main__":
                 classification_report(predictions.cpu().detach().numpy(), eval_labels.cpu().detach().numpy(), digits=8))
 
         # print results
-        print("epoch: {}, train_f1:{:4f}, test_f1:{:4f}, test_f1_max:{:4f}".format(epoch, train_auc, val_auc,
-                                                                                      test_auc_max))
+        print("epoch: {}, train_auc:{:4f}, test_auc:{:4f}, test_auc_max:{:4f}".format(epoch, train_auc, val_auc,
+                                                                                      test_auc_max, optimizer.lr))
         sdts.train()
         torch.set_grad_enabled(True)
