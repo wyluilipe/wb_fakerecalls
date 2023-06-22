@@ -221,11 +221,11 @@ if __name__ == '__main__':
     epochs = 200
     t = 40
     #     imratio = 0.95
-    margin = 1.0
-    lr = 0.1
+    margin = 2
+    lr = 0.01
     gamma = 500
     weight_decay = 1e-4
-    beta1 = 0.9  # try different values: e.g., [0.999, 0.99, 0.9]
+    beta1 = 0.999  # try different values: e.g., [0.999, 0.99, 0.9]
     beta2 = 0.999  # try different values: e.g., [0.999, 0.99, 0.9]
     train_data = torch.tensor(x_train).cuda()
     train_labels = torch.tensor(y_train).cuda()
@@ -265,9 +265,12 @@ if __name__ == '__main__':
                       margin=margin,
                       weight_decay=weight_decay)
 
+    optimizer = torch.optim.Adam(sdts.params, lr=0.1)
+
     test_auc_max = 0
     print('-' * 30)
     best_testing_auc = 0.0
+    torch.set_grad_enabled(True)
     for epoch in range(epochs):
         # Training
         sdts.train()
@@ -312,6 +315,6 @@ if __name__ == '__main__':
 
         # print results
         print("epoch: {}, train_auc:{:4f}, test_auc:{:4f}, test_auc_max:{:4f}".format(epoch, train_auc, val_auc,
-                                                                                      test_auc_max, optimizer.lr))
+                                                                                      test_auc_max)) #optimizer.lr))
         sdts.train()
         torch.set_grad_enabled(True)
