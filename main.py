@@ -170,60 +170,43 @@ class SDTs(nn.Module):
 
 
 # function predict class by f1..f8 1d-array
-def predict_1d(X):
+def predict_1d(X, row_idx=0):
     # Preprocessing for xgb model
     d = dict()
     for i in range(8):
         d[f'f{i+1}'] = X[i]
     X_xgb = pd.DataFrame(d, index=range(1))
 
-    # Preprocessing for dbdt model
-    y_ = np.array([0] * 2)
-    y_ = y_ * 2 - 1
-    X_ = np.array([list(X), list(X)])
-    X_ = (X_ - X_.min()) / (X_.max() - X_.min())
-    X_ = np.array(X_).astype(np.float32)
-    y_ = np.array(y_).astype(np.float32)
-
-    X = X * 2 - 1
-
     # Predictions
     xgb_pred = (baseline.predict(xgb.DMatrix(X_xgb)) > 0.66).astype(int)[0]
     catboost_pred = catboost_model.predict(X)
-    dbdt_pred = dbdt.compute_Boosting_output(torch.tensor(X_), torch.tensor(y_))
-    dbdt_pred = np.array(torch.Tensor.tolist(dbdt_pred))
-    dbdt_pred = (dbdt_pred > -0.711).astype(int)[0]
-
-    return xgb_pred | catboost_pred | dbdt_pred
+    if X.min() != X.max():
+        # Preprocessing for dbdt model
+        y_ = np.array([0] * 2)
+        y_ = y_ * 2 - 1
+        X_ = np.array([list(X), list(X)])
+        X_ = (X_ - X_.min()) / (X_.max() - X_.min())
+        X_ = np.array(X_).astype(np.float32)
+        y_ = np.array(y_).astype(np.float32)
+        X_ = X_ * 2 - 1
+        # Predict DBDT
+        dbdt_pred = dbdt.compute_Boosting_output(torch.tensor(X_), torch.tensor(y_))
+        dbdt_pred = np.array(torch.Tensor.tolist(dbdt_pred))
+        dbdt_pred = (dbdt_pred > -0.711).astype(int)[0]
+        return xgb_pred | catboost_pred | dbdt_pred
+    else:
+        print(f"# Prediction without DBDT model in row {row_idx}, features don't have to be the same")
+        return xgb_pred | catboost_pred
 
 
 # function predict class by f1..f8 nd-array
 def predict_nd(X):
-    # Preprocessing X for xgb model
     n_x = X.shape[0]
-    X_xgb = pd.DataFrame(X, columns=[f'f{i}' for i in range(1, 9)])
+    predict = list()
+    for i in range(n_x):
+        predict.append(predict_1d(X.iloc[i].values, row_idx=i))
 
-    # Preprocessing X and y_ for dbdt model
-    y_ = np.array([0] * n_x)
-    X_dbdt = X.astype(np.float32)
-    try:
-        X_dbdt = (X_dbdt - X_dbdt.min()) / (X_dbdt.max() - X_dbdt.min())
-    except:
-        print('Error: Invalid data (X_dbdt.max() == X_dbdt.min()).')
-        exit(0)
-
-    X_dbdt = np.array(X_dbdt).astype(np.float32)
-    y_ = y_ * 2 - 1
-    y_ = np.array(y_).astype(np.float32)
-
-    # Predictions
-    xgb_pred = (baseline.predict(xgb.DMatrix(X_xgb)) > 0.66).astype(int)
-    catboost_pred = catboost_model.predict(X)
-    dbdt_pred = dbdt.compute_Boosting_output(torch.tensor(X_dbdt), torch.tensor(y_))
-    dbdt_pred = np.array(torch.Tensor.tolist(dbdt_pred))
-    dbdt_pred = (dbdt_pred > -0.711).astype(int)
-
-    return xgb_pred | catboost_pred | dbdt_pred
+    return np.array(predict)
 
 
 if __name__ == '__main__':
@@ -238,6 +221,12 @@ if __name__ == '__main__':
         input_path = sys.argv[1]
         try:
             X = pd.read_csv(input_path)
+            print(f'Input data from file "{input_path}"')
+            if X.shape[0] < 100:
+                print(X.head(10))
+            else:
+                print(X)
+            print('-' * 60)
         except:
             print(f'Error: File "{input_path}" is not exist.')
             exit(0)
@@ -248,7 +237,6 @@ if __name__ == '__main__':
                 output_path += '.csv'
         else:
             output_path = 'output.csv'
-        print(f'Input data from file "{input_path}"')
         print(f'Print results in file "{output_path}"')
     start_time = datetime.now()
 
