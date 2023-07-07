@@ -178,8 +178,8 @@ def predict_1d(X, row_idx=0):
     X_xgb = pd.DataFrame(d, index=range(1))
 
     # Predictions
-    xgb_pred = (baseline.predict(xgb.DMatrix(X_xgb)) > 0.66).astype(int)[0]
-    catboost_pred = catboost_model.predict(X)
+    xgb_pred = baseline.predict(xgb.DMatrix(X_xgb))[0]
+    catboost_pred = catboost_model.predict_proba(X)[1]
     if X.min() != X.max():
         # Preprocessing for dbdt model
         y_ = np.array([0] * 2)
@@ -191,12 +191,12 @@ def predict_1d(X, row_idx=0):
         X_ = X_ * 2 - 1
         # Predict DBDT
         dbdt_pred = dbdt.compute_Boosting_output(torch.tensor(X_), torch.tensor(y_))
-        dbdt_pred = np.array(torch.Tensor.tolist(dbdt_pred))
-        dbdt_pred = (dbdt_pred > -0.711).astype(int)[0]
-        return xgb_pred | catboost_pred | dbdt_pred
+        dbdt_pred = np.array(torch.Tensor.tolist(dbdt_pred))[0]
+
+        return ((xgb_pred + catboost_pred + dbdt_pred + 1) / 3 > 0.3611).astype(int)
     else:
         print(f"# Prediction without DBDT model in row {row_idx}, features don't have to be the same")
-        return xgb_pred | catboost_pred
+        return ((xgb_pred + catboost_pred) / 2 > 0.3611).astype(int)
 
 
 # function predict class by f1..f8 nd-array
